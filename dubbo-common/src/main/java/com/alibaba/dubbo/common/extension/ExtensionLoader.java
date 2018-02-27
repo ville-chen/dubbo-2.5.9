@@ -69,7 +69,7 @@ public class ExtensionLoader<T> {
     private static final Pattern NAME_SEPARATOR = Pattern.compile("\\s*[,]+\\s*");
 
     /**
-     * <类型，拓展加载器>的缓冲区
+     * 缓存全局的<字节码类型，扩展加载器>，因为key唯一，所以全局中，该类型的扩展加载器唯一。
      */
     private static final ConcurrentMap<Class<?>, ExtensionLoader<?>> EXTENSION_LOADERS = new ConcurrentHashMap<Class<?>, ExtensionLoader<?>>();
 
@@ -82,38 +82,41 @@ public class ExtensionLoader<T> {
      */
     private final Class<?> type;
 
+    /**
+     * 为IOC提供对象
+     */
     private final ExtensionFactory objectFactory;
 
     /**
-     * 存储类名上 没有@Adaptive，也没有含type类型参数的构造器的拓展类
+     * 以< clazz,name[0]>存储 没有@Adaptive，构造器没有type类型参数的 扩展类class对象
      */
     private final ConcurrentMap<Class<?>, String> cachedNames = new ConcurrentHashMap<Class<?>, String>();
 
     /**
-     * 以< everyName,clazz>存储类名上 没有@Adaptive，也没有含type类型参数的构造器的拓展类
+     * 缓存一个map，map以< everyName,clazz>存储 没有@Adaptive，构造器没有type类型参数的 扩展类class对象
      */
     private final Holder<Map<String, Class<?>>> cachedClasses = new Holder<Map<String, Class<?>>>();
 
     /**
-     * 存储cachedNames中含有@Activate注解的拓展类
+     * 以< name[0],activate>存储cachedNames中 含有@Activate注解的 activate对象
      */
     private final Map<String, Activate> cachedActivates = new ConcurrentHashMap<String, Activate>();
     private final ConcurrentMap<String, Holder<Object>> cachedInstances = new ConcurrentHashMap<String, Holder<Object>>();
 
     /**
-     * 缓存cachedAdaptiveClass的实例对象
+     * 缓存cachedAdaptiveClass的holder对象
      */
     private final Holder<Object> cachedAdaptiveInstance = new Holder<Object>();
 
     /**
-     * 存储唯一的 类名上有@Adaptive的拓展类
+     * 存储唯一的 有@Adaptive的 扩展类class对象
      */
     private volatile Class<?> cachedAdaptiveClass = null;
     private String cachedDefaultName;
     private volatile Throwable createAdaptiveInstanceError;
 
     /**
-     * 存储类名上 没有@Adaptive，但是有含type类型参数的构造器拓展类
+     * 存储 没有@Adaptive，构造器有type类型参数的 扩展类class对象
      */
     private Set<Class<?>> cachedWrapperClasses;
 
@@ -129,7 +132,7 @@ public class ExtensionLoader<T> {
     }
 
     /**
-     * 获取指定类型的拓展加载器
+     * 获取指定类型的扩展加载器
      * @param type 指定类型字节码对象
      * @param <T> 指定类型
      */
@@ -144,7 +147,7 @@ public class ExtensionLoader<T> {
             throw new IllegalArgumentException("Extension type(" + type +
                     ") is not extension, because WITHOUT @" + SPI.class.getSimpleName() + " Annotation!");
         }
-
+        //获取指定字节码对象 的 扩展加载器对象
         ExtensionLoader<T> loader = (ExtensionLoader<T>) EXTENSION_LOADERS.get(type);
         if (loader == null) {
             EXTENSION_LOADERS.putIfAbsent(type, new ExtensionLoader<T>(type));
@@ -463,11 +466,11 @@ public class ExtensionLoader<T> {
     }
 
     /**
-     * (1)获取指定类型的Adaptive子类实例。
+     * (1)获取 T类型的 含@Adaptive的 扩展类实例
      */
     @SuppressWarnings("unchecked")
     public T getAdaptiveExtension() {
-        //从缓冲区中获取T类型的，含@Adaptive的子类实例
+        //从缓冲区中获取T类型的 含@Adaptive的 扩展类实例
         Object instance = cachedAdaptiveInstance.get();
         if (instance == null) {
             if (createAdaptiveInstanceError == null) {
@@ -543,7 +546,7 @@ public class ExtensionLoader<T> {
     }
 
     /**
-     * 向拓展实例中注入方法
+     * 注入扩展类
      */
     private T injectExtension(T instance) {
         try {
@@ -601,8 +604,11 @@ public class ExtensionLoader<T> {
     }
 
     /**
-     * 加载拓展类配置文件 <br>
      * synchronized in getExtensionClasses
+     * <p>
+     * 从配置文件中加载 扩展类字节码对象 信息，<br>
+     * 缓存到cachedAdaptiveClass, cachedWrapperClasses, cachedNames, cachedActivates中。
+     * @return extensionClasses：以< everyName,clazz>的map存储 没有@Adaptive，构造器没有type类型参数的 扩展类
      */
     private Map<String, Class<?>> loadExtensionClasses() {
         final SPI defaultAnnotation = type.getAnnotation(SPI.class);
@@ -617,24 +623,28 @@ public class ExtensionLoader<T> {
                 if (names.length == 1) cachedDefaultName = names[0];
             }
         }
-        //cachedClasses中的缓冲内容
+        //以< everyName,clazz>的map存储 没有@Adaptive，构造器没有type类型参数的 扩展类
         Map<String, Class<?>> extensionClasses = new HashMap<String, Class<?>>();
-        loadFile(extensionClasses, DUBBO_INTERNAL_DIRECTORY);  //META-INF/dubbo/internal/
-        loadFile(extensionClasses, DUBBO_DIRECTORY);  //META-INF/dubbo/
-        loadFile(extensionClasses, SERVICES_DIRECTORY);  //META-INF/services/
+        loadFile(extensionClasses, DUBBO_INTERNAL_DIRECTORY);  //META-INF/dubbo/internal/，dubbo spi 路径
+        loadFile(extensionClasses, DUBBO_DIRECTORY);  //META-INF/dubbo/，dubbo配置路径
+        loadFile(extensionClasses, SERVICES_DIRECTORY);  //META-INF/services/，jdk spi 路径
         return extensionClasses;
     }
 
     /**
-     * 从指定目录dir中读取配置，并在extensionClasses中存储<b>需要拓展的字节码对象的映射关系。</b><br>
-     * 所有的拓展类会分流存到cachedAdaptiveClass，cachedWrapperClasses和cachedNames三个中，<br>
-     * 其中cachedNames中，存在@Activate注解的字节码对象，会互换键值，存入cachedActivates。<br>
-     * <br>
-     * cachedAdaptiveClass：以Class<?>存储唯一的 类名上有@Adaptive的拓展类<br>
-     * cachedWrapperClasses：以Set< Class<?> >存储类名上 没有@Adaptive，但是有含type类型参数的构造器拓展类<br>
-     * cachedNames：以< clazz,name[0]>的map存储类名上 没有@Adaptive，也没有含type类型参数的构造器的拓展类 <br>
-     * cachedActivates：以< name[0],clazz>的map存储cachedNames中含有@Activate注解的拓展类<br>
-     * extensionClasses：cachedClasses中的缓冲内容，以< everyName,clazz>的map存储类名上 没有@Adaptive，也没有含type类型参数的构造器的拓展类
+     * 从指定目录中读取配置，并在extensionClasses中存储<b>需要扩展的字节码对象的映射关系。</b>
+     * <p>
+     * 所有的扩展类会分流存到cachedAdaptiveClass，cachedWrapperClasses和cachedNames三个中，<br>
+     * 这三个缓存区都是<b>以扩展类的clazz对象为维度</b>缓存的。
+     * <p>
+     * 其中cachedNames中@Activate注解的activate对象，会以<name[0],activate>存入cachedActivates。
+     * <ol>
+     * <li>cachedAdaptiveClass：以<b>Class<?></b>存储 唯一的 含有@Adaptive的 扩展类class对象</li>
+     * <li>cachedWrapperClasses：以<b>Set< Class<?> ></b>存储 没有@Adaptive，构造器有type类型参数的 扩展类class对象</li>
+     * <li>cachedNames：以< <b>clazz</b>,name[0]>的map存储 没有@Adaptive，构造器没有type类型参数的 扩展类class对象</li>
+     * <li>cachedActivates：以< name[0],activate>的map存储cachedNames中含有@Activate注解的activate对象</li>
+     * <li>extensionClasses：cachedClasses中的缓存的内容，以< everyName,clazz>的map存储 没有@Adaptive，构造器没有type类型参数的 扩展类class对象</li>
+     * </ol>
      */
     private void loadFile(Map<String, Class<?>> extensionClasses, String dir) {
         String fileName = dir + type.getName();
@@ -667,15 +677,15 @@ public class ExtensionLoader<T> {
                                         }
                                         if (line.length() > 0) {
                                             Class<?> clazz = Class.forName(line, true, classLoader);
-                                            if (!type.isAssignableFrom(clazz)) {    //拓展类字节码对象 和 type 不是实现关系
+                                            if (!type.isAssignableFrom(clazz)) {    //扩展类字节码对象 和 type 不是实现关系
                                                 throw new IllegalStateException("Error when load extension class(interface: " +
                                                         type + ", class line: " + clazz.getName() + "), class "
                                                         + clazz.getName() + "is not subtype of interface.");
                                             }
-                                            if (clazz.isAnnotationPresent(Adaptive.class)) {    //@Adaptive注解在clazz类
+                                            if (clazz.isAnnotationPresent(Adaptive.class)) {    //clazz中是否有@Adaptive注解
                                                 if (cachedAdaptiveClass == null) {
-                                                    cachedAdaptiveClass = clazz;    //缓冲当前配置行的字节码对象
-                                                } else if (!cachedAdaptiveClass.equals(clazz)) {    //最多只能有1个含@Adaptive的拓展类
+                                                    cachedAdaptiveClass = clazz;    //缓冲当前clazz
+                                                } else if (!cachedAdaptiveClass.equals(clazz)) {    //最多只能有1个含@Adaptive的扩展类
                                                     throw new IllegalStateException("More than 1 adaptive class found: "
                                                             + cachedAdaptiveClass.getClass().getName()
                                                             + ", " + clazz.getClass().getName());
@@ -758,7 +768,7 @@ public class ExtensionLoader<T> {
     }
 
     /**
-     * (2)创建指定类型的Adaptive子类实例
+     * (2)创建 T类型的 含@Adaptive的 扩展类实例
      * @return 指定类型 T
      */
     @SuppressWarnings("unchecked")
@@ -771,22 +781,22 @@ public class ExtensionLoader<T> {
     }
 
     /**
-     * 获取指定类型含@Adaptive的子类字节码对象
-     * @return Class<?> 指定类型的子类字节码对象
+     * 获取T类型含@Adaptive的扩展类的字节码对象
+     * @return Class<?> T类型扩展类的字节码对象
      */
     private Class<?> getAdaptiveExtensionClass() {
         getExtensionClasses();
-        if (cachedAdaptiveClass != null) {
+        if (cachedAdaptiveClass != null) {  //如果存在 含@Adaptive的 T类型扩展类
             return cachedAdaptiveClass;
         }
         return cachedAdaptiveClass = createAdaptiveExtensionClass();
     }
 
     /**
-     * 创建含有@Adaptive的子类字节码对象
+     * 创建含有@Adaptive的拓展类字节码对象
      */
     private Class<?> createAdaptiveExtensionClass() {
-        String code = createAdaptiveExtensionClassCode();   //组装含@Adaptive的类代码
+        String code = createAdaptiveExtensionClassCode();   //根据模版组装成类，以字符串返回
         ClassLoader classLoader = findClassLoader();
         com.alibaba.dubbo.common.compiler.Compiler compiler = ExtensionLoader.getExtensionLoader(com.alibaba.dubbo.common.compiler.Compiler.class).getAdaptiveExtension();
         return compiler.compile(code, classLoader);  //将组装好的类动态编译成字节码对象

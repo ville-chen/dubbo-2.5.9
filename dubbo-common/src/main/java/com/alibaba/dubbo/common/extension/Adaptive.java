@@ -32,7 +32,7 @@ import java.lang.annotation.Target;
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
+@Target({ElementType.TYPE, ElementType.METHOD}) //类，接口，方法
 public @interface Adaptive {
     /**
      * Decide which target extension to be injected. The name of the target extension is decided by the parameter passed
