@@ -73,6 +73,9 @@ public class ExtensionLoader<T> {
      */
     private static final ConcurrentMap<Class<?>, ExtensionLoader<?>> EXTENSION_LOADERS = new ConcurrentHashMap<Class<?>, ExtensionLoader<?>>();
 
+    /**
+     * 缓存全局的cachedClass中的扩展类实例，<字节码对象，扩展类实例>
+     */
     private static final ConcurrentMap<Class<?>, Object> EXTENSION_INSTANCES = new ConcurrentHashMap<Class<?>, Object>();
 
     // ==============================
@@ -101,6 +104,10 @@ public class ExtensionLoader<T> {
      * 以< name[0],activate>存储cachedNames中 含有@Activate注解的 activate对象
      */
     private final Map<String, Activate> cachedActivates = new ConcurrentHashMap<String, Activate>();
+
+    /**
+     * < name, 缓存扩展类wrapper实例的holder对象>
+     */
     private final ConcurrentMap<String, Holder<Object>> cachedInstances = new ConcurrentHashMap<String, Holder<Object>>();
 
     /**
@@ -331,7 +338,7 @@ public class ExtensionLoader<T> {
             return getDefaultExtension();
         }
         Holder<Object> holder = cachedInstances.get(name);
-        if (holder == null) {
+        if (holder == null) {   //初始化holder缓存对象
             cachedInstances.putIfAbsent(name, new Holder<Object>());
             holder = cachedInstances.get(name);
         }
@@ -340,7 +347,7 @@ public class ExtensionLoader<T> {
             synchronized (holder) {
                 instance = holder.get();
                 if (instance == null) {
-                    instance = createExtension(name);
+                    instance = createExtension(name);  //单例第一次创建扩展类实例
                     holder.set(instance);
                 }
             }
@@ -521,7 +528,7 @@ public class ExtensionLoader<T> {
 
     @SuppressWarnings("unchecked")
     private T createExtension(String name) {
-        Class<?> clazz = getExtensionClasses().get(name);
+        Class<?> clazz = getExtensionClasses().get(name);  //从cachedClass中获取指定name的字节码对象
         if (clazz == null) {
             throw findException(name);
         }
@@ -531,9 +538,9 @@ public class ExtensionLoader<T> {
                 EXTENSION_INSTANCES.putIfAbsent(clazz, (T) clazz.newInstance());
                 instance = (T) EXTENSION_INSTANCES.get(clazz);
             }
-            injectExtension(instance);
+            injectExtension(instance);  //依赖注入：向扩展类实例中注入要set的对象
             Set<Class<?>> wrapperClasses = cachedWrapperClasses;
-            if (wrapperClasses != null && wrapperClasses.size() > 0) {
+            if (wrapperClasses != null && wrapperClasses.size() > 0) {  //再使用wrapperClass进行装饰
                 for (Class<?> wrapperClass : wrapperClasses) {
                     instance = injectExtension((T) wrapperClass.getConstructor(type).newInstance(instance));
                 }
@@ -546,7 +553,7 @@ public class ExtensionLoader<T> {
     }
 
     /**
-     * 注入扩展类
+     * 注入依赖
      */
     private T injectExtension(T instance) {
         try {
@@ -558,9 +565,9 @@ public class ExtensionLoader<T> {
                         Class<?> pt = method.getParameterTypes()[0];
                         try {
                             String property = method.getName().length() > 3 ? method.getName().substring(3, 4).toLowerCase() + method.getName().substring(4) : "";
-                            Object object = objectFactory.getExtension(pt, property);
+                            Object object = objectFactory.getExtension(pt, property); //(参数类型,参数名)
                             if (object != null) {
-                                method.invoke(instance, object);
+                                method.invoke(instance, object);    //执行instance的method方法，注入object实例
                             }
                         } catch (Exception e) {
                             logger.error("fail to inject via method " + method.getName()
@@ -587,7 +594,7 @@ public class ExtensionLoader<T> {
     }
 
     /**
-     * 获取并初始化cachedClasses
+     * (4)获取并初始化cachedClasses
      */
     private Map<String, Class<?>> getExtensionClasses() {
         Map<String, Class<?>> classes = cachedClasses.get();
@@ -781,7 +788,7 @@ public class ExtensionLoader<T> {
     }
 
     /**
-     * 获取T类型含@Adaptive的扩展类的字节码对象
+     * (3)获取T类型含@Adaptive的扩展类的字节码对象
      * @return Class<?> T类型扩展类的字节码对象
      */
     private Class<?> getAdaptiveExtensionClass() {
@@ -793,7 +800,7 @@ public class ExtensionLoader<T> {
     }
 
     /**
-     * 创建含有@Adaptive的拓展类字节码对象
+     * (5)创建含有@Adaptive的拓展类字节码对象
      */
     private Class<?> createAdaptiveExtensionClass() {
         String code = createAdaptiveExtensionClassCode();   //根据模版组装成类，以字符串返回
