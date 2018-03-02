@@ -91,3 +91,9 @@ SPI
 
     概括getExtension过程：根据name去cachedInstances中获取对应的扩展类的wrapper实例，如果不存在，则用这个name去cachedClass中取得它的字节码对象并newInstance()。
     然后想这个instance中注入依赖(依赖通过objectFactory的factories获取)，最后用cachedWrapperClass中的对象逐个进行装饰，得到最终的wrapper对象，存入cachedInstance中。
+
+                            |—————装饰者——————|
+                            |                |
+    getExtension()——————工厂、单例            IOC————> AOP ————> wrapper对象
+                            |                |
+                            |—————动态代理—————|
